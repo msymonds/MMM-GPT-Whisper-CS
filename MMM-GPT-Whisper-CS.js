@@ -3,126 +3,98 @@
 /* Magic Mirror
  * Module: MMM-GPT-Whisper-CS
  *
- * By 
+ * By Michael Symonds
  * MIT Licensed.
  */
-
 Module.register("MMM-GPT-Whisper-CS", {
 	defaults: {
-		updateInterval: 60000,
-		retryDelay: 5000
+    state: 'idle'
 	},
 
 	requiresVersion: "2.1.0", // Required version of MagicMirror
 
 	start: function() {
-		var self = this;
-		var dataRequest = null;
-		var dataNotification = null;
+    Log.info("Starting module: " + this.name);
+    this.state = 'idle';
 
-		//Flag for check if module is loaded
-		this.loaded = false;
+    const defaultConfig = {
+      picovoiceSilenceTime: 3,
+      picovoiceSilenceThreshold: 1.1,
+      audioDeviceIndex: 0,
+      whisperUrl: '',
+      whisperLanguage: 'en',
+      whisperMethod: 'faster-whisper',
+      mimic3Url: '',
+      mimic3Voice: 'en_US/cmu-arctic_low#gka',
+      openAiKey: '',
+      openAiSystemMsg: "The following is a friendly conversation between a human and an AI. The AI is concise and keeps responses to a maximum of 30 words or less. If the AI does not know the answer to a question, it truthfully says it does not know.",
+      debug: false
+    };
 
-		// Schedule update timer.
-		this.getData();
-		setInterval(function() {
-			self.updateDom();
-		}, this.config.updateInterval);
+    // Merge default configuration with changed values.
+    this.config = Object.assign({}, defaultConfig, this.config);
+
+    // Check if required things are set.
+    if (!this.config.whisperUrl || !this.config.mimic3Url || !this.config.openAiKey) {
+      this.state = 'config_issue';
+    }
+    else {
+      this.sendSocketNotification('CONFIG', this.config);
+    }
 	},
 
-	/*
-	 * getData
-	 * function example return data and show it in the module wrapper
-	 * get a URL request
-	 *
-	 */
-	getData: function() {
-		var self = this;
+  getDom: function() {
+    var wrapper = document.createElement("div");
 
-		var urlApi = "https://jsonplaceholder.typicode.com/posts/1";
-		var retry = true;
+    // State-based UI rendering
+    switch(this.state) {
+      case 'config_issue':
+        wrapper.innerHTML = "Please supply configs...";
+        break;
+      case 'idle':
+        wrapper.innerHTML = "Waiting for trigger word...";
+        break;
+      case 'listening':
+        wrapper.innerHTML = this.triggeredKeyword + ": Listening...";
+        break;
+      case 'processing':
+        wrapper.innerHTML = this.triggeredKeyword + ": Processing...";
+        break;
+      case 'request_received':
+        wrapper.innerHTML = '<div>' + this.triggeredKeyword + ": Processing..." + '</div>';
+        wrapper.innerHTML += '<div><span class="bright">Request: </span>' + this.requestText + '</div>';
+        break;
+      case 'reply_received':
+        wrapper.innerHTML = '<div><span class="bright">Reply: </span>' + this.replyText + '</div>';
 
-		var dataRequest = new XMLHttpRequest();
-		dataRequest.open("GET", urlApi, true);
-		dataRequest.onreadystatechange = function() {
-			console.log(this.readyState);
-			if (this.readyState === 4) {
-				console.log(this.status);
-				if (this.status === 200) {
-					self.processData(JSON.parse(this.response));
-				} else if (this.status === 401) {
-					self.updateDom(self.config.animationSpeed);
-					Log.error(self.name, this.status);
-					retry = false;
-				} else {
-					Log.error(self.name, "Could not load data.");
-				}
-				if (retry) {
-					self.scheduleUpdate((self.loaded) ? -1 : self.config.retryDelay);
-				}
-			}
-		};
-		dataRequest.send();
-	},
+        // Reset state in X seconds.
+        setTimeout(this.resetState.bind(this), (this.calculateDisplayTime(this.replyText, 150) + 20) * 1000);
+        break;
+      case 'error':
+        wrapper.innerHTML = '<div><span class="bright">ERROR: </span>' + this.error + '</div>';
+        // Reset state in 10 seconds.
+        setTimeout(this.resetState.bind(this), 10 * 1000);
+        break;
+      default:
+        wrapper.innerHTML = "Unknown state";
+        break;
+    }
 
+    return wrapper;
+  },
 
-	/* scheduleUpdate()
-	 * Schedule next update.
-	 *
-	 * argument delay number - Milliseconds before next update.
-	 *  If empty, this.config.updateInterval is used.
-	 */
-	scheduleUpdate: function(delay) {
-		var nextLoad = this.config.updateInterval;
-		if (typeof delay !== "undefined" && delay >= 0) {
-			nextLoad = delay;
-		}
-		nextLoad = nextLoad ;
-		var self = this;
-		setTimeout(function() {
-			self.getData();
-		}, nextLoad);
-	},
-
-	getDom: function() {
-		var self = this;
-
-		// create element wrapper for show into the module
-		var wrapper = document.createElement("div");
-		// If this.dataRequest is not empty
-		if (this.dataRequest) {
-			var wrapperDataRequest = document.createElement("div");
-			// check format https://jsonplaceholder.typicode.com/posts/1
-			wrapperDataRequest.innerHTML = this.dataRequest.title;
-
-			var labelDataRequest = document.createElement("label");
-			// Use translate function
-			//             this id defined in translations files
-			labelDataRequest.innerHTML = this.translate("TITLE");
+  getHeader: function() {
+    return 'WhisperGPT';
+  },
 
 
-			wrapper.appendChild(labelDataRequest);
-			wrapper.appendChild(wrapperDataRequest);
-		}
-
-		// Data from helper
-		if (this.dataNotification) {
-			var wrapperDataNotification = document.createElement("div");
-			// translations  + datanotification
-			wrapperDataNotification.innerHTML =  this.translate("UPDATE") + ": " + this.dataNotification.date;
-
-			wrapper.appendChild(wrapperDataNotification);
-		}
-		return wrapper;
-	},
-
-	getScripts: function() {
+  getScripts: function() {
 		return [];
 	},
 
 	getStyles: function () {
 		return [
-			"MMM-GPT-Whisper-CS.css",
+			"MMM-WhisperGPT.css",
 		];
 	},
 
@@ -140,18 +112,76 @@ Module.register("MMM-GPT-Whisper-CS", {
 		this.dataRequest = data;
 		if (this.loaded === false) { self.updateDom(self.config.animationSpeed) ; }
 		this.loaded = true;
-
-		// the data if load
-		// send notification to helper
-		this.sendSocketNotification("MMM-GPT-Whisper-CS-NOTIFICATION_TEST", data);
 	},
 
 	// socketNotificationReceived from helper
 	socketNotificationReceived: function (notification, payload) {
-		if(notification === "MMM-GPT-Whisper-CS-NOTIFICATION_TEST") {
-			// set dataNotification
-			this.dataNotification = payload;
-			this.updateDom();
+    if (notification === 'KEYWORD_DETECTED') {
+      Log.info('Keyword detected: ', payload);
+			this.triggeredKeyword = payload;
+
+			// Ping other modules.
+      this.sendNotification("WHISPERGPT_KEYWORD_DETECTED", payload);
 		}
+		else if (notification === 'START_RECORDING') {
+      Log.info('Recording: start');
+      this.state = 'listening';
+    }
+    else if (notification === 'STOP_RECORDING') {
+      Log.info('Recording: stop');
+      this.state = 'processing';
+    }
+    else if (notification === 'UPLOAD_WHISPER') {
+      Log.info('Uploading to Whisper');
+      this.state = 'processing';
+    }
+    else if (notification === 'REQUEST_PROCESSED') {
+      Log.info('Text: ' + payload);
+      this.state = 'request_received';
+
+      let maxLength = 500;
+      this.requestText = payload.length > maxLength ? payload.slice(0, maxLength) + '...' : payload;
+    }
+    else if (notification === "CUSTOM_COMMAND") {
+      // Ping other modules.
+      this.sendNotification("WHISPERGPT_COMMAND", payload);
+    }
+    else if (notification === "ERROR") {
+      this.state = 'error';
+      this.error = payload;
+    }
+    else if (notification === 'REPLY_RECEIVED') {
+      Log.info('Reply: ' + payload);
+      this.state = 'reply_received';
+      this.replyText = payload;
+
+      const notification = {
+        message: '<span class="bright">Reply:</span><div class="alert-reply-content">' + payload.replace(/\n/g, '<br>') + '</div>',
+        title: `${this.config.picovoiceWord } Replied...`,
+        imageFA: 'robot',
+        timer: (this.calculateDisplayTime(payload, 150) + 5) * 1000
+      };
+      this.sendNotification("SHOW_ALERT", notification);
+    }
+    else if (notification === 'HIDE_ALERT') {
+      this.sendNotification("HIDE_ALERT", notification);
+    }
+    this.updateDom();
 	},
+
+  calculateDisplayTime: function (text, wordsPerMinute) {
+    const words = text.split(' ').length;
+    const minutes = words / wordsPerMinute;
+    const seconds = minutes * 60;
+    return seconds;
+  },
+
+  resetState: function() {
+	  if (this.state === 'reply_received') {
+      this.state = 'idle';
+      this.requestText = '';
+      this.replyText = '';
+      this.updateDom();
+    }
+  }
 });

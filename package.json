@@ -1,9 +1,9 @@
 {
-  "name": "MMM-GPT-Whisper-CS",
+  "name": "MMM-WhisperGPT",
   "version": "1.0.0",
   "description": "Todo: Insert description here!",
-  "main": "MMM-GPT-Whisper-CS.js",
-  "author": "",
+  "main": "MMM-WhisperGPT.js",
+  "author": "Michael Symonds",
   "license": "MIT",
   "devDependencies": {
     "grunt": "latest",
@@ -12,7 +12,21 @@
     "grunt-markdownlint": "^1.0.13",
     "grunt-stylelint": "latest",
     "grunt-yamllint": "latest",
-    "stylelint-config-standard": "latest",
+    "stylelint": "14.x",
+    "stylelint-config-standard": "23.x",
     "time-grunt": "latest"
+  },
+  "dependencies": {
+    "@picovoice/porcupine-node": "^2.2.0",
+    "@picovoice/pvrecorder-node": "^1.1.2",
+    "axios": "^1.4.0",
+    "buffer": "^6.0.3",
+    "form-data": "^4.0.0",
+    "langchain": "^0.0.75",
+    "node-lame": "^1.3.2",
+    "play-sound": "^1.1.5",
+    "querystring": "^0.2.1",
+    "wavefile": "^11.0.0",
+    "xmldom": "^0.6.0"
   }
 }
